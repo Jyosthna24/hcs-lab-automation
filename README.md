@@ -78,6 +78,7 @@ The statistical unit is the **well**, not the cell. Cells in the same well aren'
 | Feature | Option | What it does |
 |---|---|---|
 | **HPC submission** | `--hpc hpc.yaml` ([example for UCL Myriad](examples/hpc_myriad.yaml)) | Uploads **only the images the input file needs** (planned wells, analysis window, plus the MetaXpress metadata), rewrites paths for the cluster, renders an SGE job script (walltime, memory, cores, modules), runs `qsub`, polls `qstat` and downloads the results. It authenticates with SSH keys through an optional jump host (e.g. a university gateway) and rejects unknown host keys, so it can run unattended. |
+| **Cloud computing (AWS)** | `--cloud cloud.yaml` ([example](examples/cloud_aws.yaml)) | Uploads only the needed images to **S3**, then submits an **AWS Batch** job that runs the analysis in a **Docker container** ([Dockerfile](Dockerfile)), with CPU, memory and optional **GPU** for deep-learning segmentation. It polls the job, terminates it on timeout, and downloads the results and analysis log from S3. Inside the container, `hcsauto.cloud_worker` stages the run from S3 and pushes the results back. Batch scales to zero between plates, so there are no idle costs. Credentials come from the standard AWS chain (SSO, profile or instance role), never from config files. |
 | **Automatic plate rejection** | `--zprime-min 0.5 --on-fail flag\|exclude\|stop` | Plates whose control Z′ is below the threshold FAIL QC. **flag**: report everything, with failures marked in the summary, deck title and Excel. **exclude**: drop failed plates from statistics, Prism tables and figures. **stop**: release no results, only the QC workbook (exit code 3). |
 | **Notifications** | `--notify notify.yaml` ([example](examples/notify.yaml)) | Email (SMTP/TLS, with the deck attached) and/or a **Microsoft Teams** Adaptive Card through a webhook, sent when a run finishes, is rejected or fails. Credentials come from environment variables, and a mail outage never loses a run. |
 | **Run database** | `--db runs.sqlite`, then `hcsauto trend` | Every run's QC (Z′, SSMD, verdict), per-condition results and well reconciliation go into **SQLite**. `trend` draws a **statistical process control chart** (Shewhart ±3 SD limits from baseline runs, plus a 7-point drift rule) to catch assay degradation over months. |
@@ -138,6 +139,7 @@ Edit [`hcsauto/profiles.yaml`](hcsauto/profiles.yaml), or pass `--profiles my_pr
 hcsauto/
   watch.py       hands-off plate processing             ingest.py          completion check + verified copy
   hpc.py         SGE/Myriad upload-submit-poll-download notify.py          email + Teams
+  cloud.py       S3 + AWS Batch orchestration           cloud_worker.py    container entry point (Dockerfile)
   rundb.py       SQLite history + SPC control charts    eln.py             ELN/LIMS + RO-Crate export
   metaxpress.py  MetaXpress .HTD reader                  
   detect.py      microscope detection + metadata        profiles.py/.yaml  instrument QC profiles
@@ -147,7 +149,7 @@ hcsauto/
 ```
 
 ## Skills demonstrated
-Lab automation and workflow orchestration · systems integration (ImageXpress/MetaXpress → analysis pipeline) · event-driven processing (folder watching, completion detection) · verified, resumable data transfer · HPC job orchestration (SSH, SGE) · QC gating · alerting (SMTP, Teams webhooks) · SQL and statistical process control · ELN/LIMS integration and FAIR data packaging (RO-Crate) · instrument metadata parsing (MetaXpress .HTD, Phenix Index.xml, TIFF tags) · configuration management · data validation · audit trails and reproducibility (GLP-minded) · automated reporting (Excel, GraphPad Prism, PowerPoint) · statistics with multiple-testing correction · testing and CI
+Lab automation and workflow orchestration · systems integration (ImageXpress/MetaXpress → analysis pipeline) · event-driven processing (folder watching, completion detection) · verified, resumable data transfer · HPC job orchestration (SSH, SGE) · cloud computing (AWS S3, AWS Batch, Docker, GPU) · QC gating · alerting (SMTP, Teams webhooks) · SQL and statistical process control · ELN/LIMS integration and FAIR data packaging (RO-Crate) · instrument metadata parsing (MetaXpress .HTD, Phenix Index.xml, TIFF tags) · configuration management · data validation · audit trails and reproducibility (GLP-minded) · automated reporting (Excel, GraphPad Prism, PowerPoint) · statistics with multiple-testing correction · testing and CI
 
 ---
 *Part of my PhD tooling for high-content CFTR screening. See my [GitHub profile](https://github.com/Jyosthna24).*

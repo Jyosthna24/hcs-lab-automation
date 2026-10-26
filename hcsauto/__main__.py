@@ -2,6 +2,7 @@
 
     python -m hcsauto watch   MICROSCOPE_OUT --dest DATA --runs RUNS --plate-maps MAPS --norm WT_DMSO --pipeline "..."
     python -m hcsauto run     PLATE_MAP IMAGE_FOLDER --norm WT_DMSO -o runs/plate1 --hpc hpc.yaml --db runs.sqlite
+    python -m hcsauto run     PLATE_MAP IMAGE_FOLDER --norm WT_DMSO -o runs/plate1 --cloud cloud_aws.yaml
     python -m hcsauto ingest  PLATE_FOLDER DATA
     python -m hcsauto detect  IMAGE_FOLDER
     python -m hcsauto prepare PLATE_MAP IMAGE_FOLDER --norm WT_DMSO -o runs/plate1
@@ -52,6 +53,7 @@ def _analysis_args(p, required=True):
     g = p.add_mutually_exclusive_group(required=required)
     g.add_argument("--pipeline", help="local analysis command; placeholders {input} {config} {results_dir}")
     g.add_argument("--hpc", type=Path, help="HPC settings YAML: run the analysis on the cluster")
+    g.add_argument("--cloud", type=Path, help="cloud settings YAML: run the analysis on AWS Batch")
     p.add_argument("--results-name", default=None, help="results file name (default: newest .xlsx produced)")
     p.add_argument("--notify", type=Path, help="notification settings YAML (email / Teams)")
     p.add_argument("--db", type=Path, help="SQLite run database to record QC and results in")
@@ -88,14 +90,17 @@ def _run(a) -> int:
 
     results_dir = a.outdir / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
+    s = m["settings"]
+    remote_args = (f"{run_name}_{a.outdir.name}", Path(m["outputs"]["input_file"]), Path(m["outputs"]["config"]),
+                   Path(m["instrument"]["image_folder"]), Path(m["plate"]["base_folder"]) / run_name,
+                   results_dir, range(int(s["first_timepoint"]), int(s["last_timepoint"]) + 1))
     try:
         if a.hpc:
             from .hpc import HPCConfig, run_on_hpc
-            s = m["settings"]
-            run_on_hpc(HPCConfig.load(a.hpc), f"{run_name}_{a.outdir.name}",
-                       Path(m["outputs"]["input_file"]), Path(m["outputs"]["config"]),
-                       Path(m["instrument"]["image_folder"]), Path(m["plate"]["base_folder"]) / run_name,
-                       results_dir, range(int(s["first_timepoint"]), int(s["last_timepoint"]) + 1))
+            run_on_hpc(HPCConfig.load(a.hpc), *remote_args)
+        elif a.cloud:
+            from .cloud import CloudConfig, run_on_cloud
+            run_on_cloud(CloudConfig.load(a.cloud), *remote_args)
         else:
             # paths are quoted here, so lab folder names with spaces just work
             cmd = a.pipeline.format(input=f'"{m["outputs"]["input_file"]}"',
@@ -234,7 +239,7 @@ def main(argv=None) -> int:
         if a.cmd == "watch":
             pass_through = [("--pos", a.pos), ("--neg", a.neg), ("--profiles", a.profiles),
                             ("--config-template", a.config_template), ("--pipeline", a.pipeline),
-                            ("--hpc", a.hpc), ("--notify", a.notify), ("--db", a.db),
+                            ("--hpc", a.hpc), ("--cloud", a.cloud), ("--notify", a.notify), ("--db", a.db),
                             ("--operator", a.operator), ("--title", a.title),
                             ("--zprime-min", a.zprime_min), ("--on-fail", a.on_fail),
                             ("--min-cells", a.min_cells)]

@@ -279,6 +279,88 @@ def test_hpc_uploads_only_needed_images_and_collects_results(tmp_path, short_pro
     assert remote_input["baseFolder"].str.contains("cluster").all()                 # paths rewritten
 
 
+# ---------------------------------------------------------------- cloud (S3 + AWS Batch)
+class FakeS3:
+    """In-memory S3 with the boto3 calls hcsauto uses (incl. paginated listing)."""
+
+    def __init__(self, page_size=3):
+        self.objects, self.page = {}, page_size
+
+    def upload_file(self, filename, bucket, key):
+        self.objects[(bucket, key)] = Path(filename).read_bytes()
+
+    def download_file(self, bucket, key, filename):
+        Path(filename).parent.mkdir(parents=True, exist_ok=True)
+        Path(filename).write_bytes(self.objects[(bucket, key)])
+
+    def list_objects_v2(self, Bucket, Prefix, ContinuationToken=None):
+        keys = sorted(k for b, k in self.objects if b == Bucket and k.startswith(Prefix))
+        start = int(ContinuationToken or 0)
+        page = keys[start:start + self.page]
+        more = start + self.page < len(keys)
+        return {"Contents": [{"Key": k} for k in page], "IsTruncated": more,
+                **({"NextContinuationToken": str(start + self.page)} if more else {})}
+
+
+class FakeBatch:
+    """Runs the real cloud worker against FakeS3 when a job is submitted."""
+
+    def __init__(self, s3, workdir):
+        self.s3, self.workdir, self.jobs, self.calls = s3, workdir, {}, []
+
+    def submit_job(self, **kw):
+        from hcsauto import cloud_worker
+        self.calls.append(kw)
+        env = {e["name"]: e["value"] for e in kw["containerOverrides"]["environment"]}
+        code = cloud_worker.run(env, s3=self.s3, workdir=self.workdir)
+        self.jobs["job-1"] = {"status": "SUCCEEDED" if code == 0 else "FAILED", "statusReason": f"exit {code}"}
+        return {"jobId": "job-1"}
+
+    def describe_jobs(self, jobs):
+        return {"jobs": [self.jobs[j] for j in jobs]}
+
+
+def test_cloud_run_uploads_submits_and_collects(tmp_path, short_profiles):
+    from hcsauto.cloud import CloudConfig, run_on_cloud
+    img = fake_imagexpress(tmp_path / "raw" / "Plate_1", WELLS + ["H12"], TPS)
+    m = prepare_run(PLATE_MAP, img, tmp_path / "run", "WT_DMSO", profiles_file=short_profiles)
+    fake = ROOT / "scripts" / "fake_pipeline.py"
+    cfg = CloudConfig(bucket="lab-bucket", job_queue="q", job_definition="jd", gpus=1, poll_seconds=0,
+                      command=f'"{sys.executable}" "{fake}" --input {{input}} --config {{config}} --out {{results_dir}}')
+    s3 = FakeS3()
+    batch = FakeBatch(s3, tmp_path / "container")
+    out = run_on_cloud(cfg, "Plate_1_run", Path(m["outputs"]["input_file"]), Path(m["outputs"]["config"]),
+                       img, img, tmp_path / "run" / "results", range(2, 6), s3=s3, batch=batch, log=lambda s: None)
+    assert (out / "results.xlsx").exists() and (out / "analysis.log").exists()
+    keys = [k for _, k in s3.objects]
+    assert not any("_H12_" in k for k in keys)                                  # only needed images uploaded
+    assert any(k.endswith(".HTD") for k in keys)
+    req = batch.calls[0]
+    assert req["jobQueue"] == "q" and req["containerOverrides"]["command"][-1] == "hcsauto.cloud_worker"
+    assert {"type": "GPU", "value": "1"} in req["containerOverrides"]["resourceRequirements"]
+
+
+def test_cloud_job_failure_is_reported(tmp_path, short_profiles):
+    from hcsauto.cloud import CloudConfig, run_on_cloud
+    img = fake_imagexpress(tmp_path / "raw" / "Plate_1", WELLS, TPS)
+    m = prepare_run(PLATE_MAP, img, tmp_path / "run", "WT_DMSO", profiles_file=short_profiles)
+    cfg = CloudConfig(bucket="b", job_queue="q", job_definition="jd", poll_seconds=0,
+                      command=f'"{sys.executable}" -c "import sys; sys.exit(2)"')
+    s3 = FakeS3()
+    with pytest.raises(RuntimeError, match="failed: exit 2"):
+        run_on_cloud(cfg, "r", Path(m["outputs"]["input_file"]), Path(m["outputs"]["config"]), img, img,
+                     tmp_path / "run" / "results", range(2, 6), s3=s3, batch=FakeBatch(s3, tmp_path / "c"),
+                     log=lambda s: None)
+
+
+def test_cloud_config_rejects_unknown_provider(tmp_path):
+    from hcsauto.cloud import CloudConfig
+    f = tmp_path / "c.yaml"
+    f.write_text("provider: gcp\nbucket: b\njob_queue: q\njob_definition: d\ncommand: x\n")
+    with pytest.raises(ValueError, match="unsupported"):
+        CloudConfig.load(f)
+
+
 # ---------------------------------------------------------------- QC rejection
 def _results_with_bad_plate(path):
     df = fake_results(PLATE_MAP)

@@ -1,0 +1,14 @@
+# Cloud settings for AWS (S3 + Batch). Credentials come from the normal AWS chain
+# (aws configure / SSO / instance role) - never put keys in this file.
+provider: aws
+region: eu-west-2
+bucket: my-lab-hcs-data              # S3 bucket for run data and results
+prefix: hcsauto
+job_queue: hcs-analysis-queue         # Batch job queue (CPU or GPU compute environment)
+job_definition: hcsauto-analysis      # job definition using the image built from the Dockerfile
+command: python /opt/pipeline/main.py --input {input} --config {config} --out {results_dir}
+vcpus: 8
+memory_mib: 16384
+gpus: 0                               # set to 1 for GPU segmentation (needs a GPU compute environment)
+poll_seconds: 30
+timeout_hours: 24
