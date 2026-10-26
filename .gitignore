@@ -1,0 +1,17 @@
+# Never commit real experimental data, images or models
+*.xlsx
+*.tif
+*.tiff
+*.TIF
+*.pth
+*.pzfx
+*.pptx
+*.sqlite
+*.zip
+hpc.yaml
+notify.yaml
+demo_output/
+runs/
+__pycache__/
+*.pyc
+.venv/

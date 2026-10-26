@@ -1,0 +1,19 @@
+# HPC settings for UCL Myriad (SGE). Copy, fill in, keep out of git if it has personal details.
+host: myriad.rc.ucl.ac.uk
+jump_host: ssh-gateway.ucl.ac.uk     # UCL gateway when off campus; remove if not needed
+user: YOUR_UCL_ID
+key_file: ~/.ssh/id_ed25519          # key authentication only - no passwords in automation
+remote_root: /home/YOUR_UCL_ID/Scratch/hcsauto
+
+resources:
+  walltime: "4:00:00"
+  memory: 8G
+  cores: 8
+modules:
+  - module load python3/recommended
+setup:
+  - source ~/venvs/cftr/bin/activate
+command: python ~/CFTR/main.py --input {input} --config {config} --out {results_dir}
+
+poll_seconds: 60
+timeout_hours: 24

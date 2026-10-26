@@ -1,0 +1,43 @@
+# Instrument QC profiles: the analysis settings that differ between microscopes.
+# The automation picks the profile matching the detected instrument, then adapts
+# pixel-based values to the pixel size actually found in the image metadata.
+#
+# reference_pixel_size_um : pixel size the pixel-based values below were tuned at
+# diameter_px / min_size_px: Cellpose settings in pixels at that reference size
+# *_um values              : physical units, so they never need rescaling
+
+imagexpress:
+  microscope_type: ImageXpress
+  reference_pixel_size_um: 0.3
+  diameter_px: 47.236
+  min_size_px: 15
+  lower_red_bound: 1.0
+  upper_red_bound: 4.0
+  outer_membrane_bound: 2
+  inner_membrane_bound: 2
+  first_timepoint: 10
+  last_timepoint: 33
+  reference_timepoint: 12
+  min_area_um: 75
+  max_area_um: 431
+  min_major_axis_um: 12
+  max_major_axis_um: 38
+  min_viable_pct: 0.1
+
+phenix:
+  microscope_type: opera phenix
+  reference_pixel_size_um: 0.3
+  diameter_px: 47.236
+  min_size_px: 15
+  lower_red_bound: 0.5
+  upper_red_bound: 2.5
+  outer_membrane_bound: 0
+  inner_membrane_bound: 2
+  first_timepoint: 10
+  last_timepoint: 33
+  reference_timepoint: 12
+  min_area_um: 75
+  max_area_um: 431
+  min_major_axis_um: 12
+  max_major_axis_um: 38
+  min_viable_pct: 0.1
